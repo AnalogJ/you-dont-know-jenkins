@@ -19,6 +19,17 @@ include_recipe 'git'
 ###############################################################################
 include_recipe 'jenkins::master'
 
+# you better be using authentication on your Jenkins server, if you are, you'll need to tell chef
+# to authenticate as the automation user. If this is the first run, and you haven't created your automation user yet
+# don't worry, the jenkins cookbook is smart enough to fall back to the anonymous user.
+#TODO: this should be from secret databag
+ruby_block 'run as jenkins automation user' do
+  block {
+    key = OpenSSL::PKey::RSA.new(data_bag_item(node.chef_environment, 'automation_user')['cli_private_key'])
+    node.run_state[:jenkins_private_key] = key.to_pem
+  }
+end
+
 ###############################################################################
 # Base Jenkins configuration
 ###############################################################################
@@ -35,44 +46,6 @@ directory "#{node['jenkins']['master']['home']}/init.groovy.d/" do
   group node['jenkins']['master']['group']
   mode '0755'
   recursive true
-end
-
-jenkins_plugin 'mailer' do # mailer plugin is required before we create automation user https://github.com/chef-cookbooks/jenkins/issues/470
-  not_if { ::File.exist?("#{node['jenkins']['master']['home']}/.flags/automation_user_created")}
-end
-
-###############################################################################
-# Configure Jenkins automation user
-###############################################################################
-# TODO: this should be from an encrypted databag
-automation_user_public_key = OpenSSL::PKey::RSA.new(data_bag_item(node.chef_environment, 'automation_user')['cli_private_key']).public_key
-automation_user_public_key_type = automation_user_public_key.ssh_type
-automation_user_public_key_data = [ automation_user_public_key.to_blob ].pack('m0')
-
-jenkins_user node['jenkins_wrapper_cookbook']['automation_username'] do
-  full_name 'Automation Account - used by chef to configure Jenkins & create bootstrap job'
-  public_keys ["#{automation_user_public_key_type} #{automation_user_public_key_data}"]
-  notifies :create, 'file[flag_automation_user_created]', :immediately
-  not_if { ::File.exist?("#{node['jenkins']['master']['home']}/.flags/automation_user_created")}
-end
-
-file 'flag_automation_user_created' do
-  path "#{node['jenkins']['master']['home']}/.flags/automation_user_created"
-  content ''
-  owner node['jenkins']['master']['user']
-  group node['jenkins']['master']['group']
-  mode '0644'
-  action :nothing
-end
-
-# you better be using authentication on your Jenkins server, if you are, you'll need to tell chef
-# to authenticate as the automation user
-#TODO: this should be from secret databag
-ruby_block 'run as jenkins automation user' do
-  block {
-    key = OpenSSL::PKey::RSA.new(data_bag_item(node.chef_environment, 'automation_user')['cli_private_key'])
-    node.run_state[:jenkins_private_key] = key.to_pem
-  }
 end
 
 ###############################################################################
@@ -132,6 +105,35 @@ jenkins_script 'update_all_unpinned_plugins' do
 
   EOH
 end
+
+
+###############################################################################
+# Configure Jenkins automation user
+###############################################################################
+# TODO: this should be from an encrypted databag
+# make sure the plugins were installed before creating your first user because the mailer plugin is required
+# before we create any users https://github.com/chef-cookbooks/jenkins/issues/470
+
+automation_user_public_key = OpenSSL::PKey::RSA.new(data_bag_item(node.chef_environment, 'automation_user')['cli_private_key']).public_key
+automation_user_public_key_type = automation_user_public_key.ssh_type
+automation_user_public_key_data = [ automation_user_public_key.to_blob ].pack('m0')
+
+jenkins_user node['jenkins_wrapper_cookbook']['automation_username'] do
+  full_name 'Automation Account - used by chef to configure Jenkins & create bootstrap job'
+  public_keys ["#{automation_user_public_key_type} #{automation_user_public_key_data}"]
+  notifies :create, 'file[flag_automation_user_created]', :immediately
+  not_if { ::File.exist?("#{node['jenkins']['master']['home']}/.flags/automation_user_created")}
+end
+
+file 'flag_automation_user_created' do
+  path "#{node['jenkins']['master']['home']}/.flags/automation_user_created"
+  content ''
+  owner node['jenkins']['master']['user']
+  group node['jenkins']['master']['group']
+  mode '0644'
+  action :nothing
+end
+
 
 ###############################################################################
 # Configure Jenkins Credentials
