@@ -22,6 +22,8 @@ include_recipe 'jenkins::master'
 # you better be using authentication on your Jenkins server, if you are, you'll need to tell chef
 # to authenticate as the automation user. If this is the first run, and you haven't created your automation user yet
 # don't worry, the jenkins cookbook is smart enough to fall back to the anonymous user.
+# if you dont set the run_state[:jenkins_private_key] early in the chef run, runs after authentication has been enabled will
+# always fail.
 #TODO: this should be from secret databag
 ruby_block 'run as jenkins automation user' do
   block {
