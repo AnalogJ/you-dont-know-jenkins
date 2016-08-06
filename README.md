@@ -10,3 +10,4 @@
 - https://github.com/glenjamin/jenkins-groovy-examples
 - https://github.com/blacklabelops/jenkins/tree/master/groovy
 - https://erichelgeson.github.io/blog/2014/05/10/automating-your-automation-federated-jenkins-with-chef/
+- https://github.com/DotCi/jenkinsci-dotci-example/blob/master/configure-dotci.groovy
