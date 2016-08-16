@@ -19,11 +19,9 @@ include_recipe 'git'
 ###############################################################################
 include_recipe 'jenkins::master'
 
-# you better be using authentication on your Jenkins server, if you are, you'll need to tell chef
-# to authenticate as the automation user. If this is the first run, and you haven't created your automation user yet
-# don't worry, the jenkins cookbook is smart enough to fall back to the anonymous user.
-# if you dont set the run_state[:jenkins_private_key] early in the chef run, runs after authentication has been enabled will
-# always fail.
+# The first thing we need to do is specify our automation user credentials for the Jenkins server.
+# This is a bit counter intuitive, as this is the first run and we haven't created our automation user or turned on Authentication yet, but on subsequent Chef run this cookbook will fail if the automation user API credentials are not configured.
+# Thankfully the Chef cookbook is smart enough to use the anonymous user first, and only use the specified credentials if required.
 #TODO: this should be from secret databag
 ruby_block 'run as jenkins automation user' do
   block {
@@ -113,9 +111,8 @@ end
 # Configure Jenkins automation user
 ###############################################################################
 # TODO: this should be from an encrypted databag
-# The first thing we need to do is specify our automation user credentials for the Jenkins server.
-# This is a bit counter intuitive, as this is the first run and we haven't created our automation user or turned on Authentication yet, but on subsequent Chef run this cookbook will fail if the automation user API credentials are not configured.
-# Thankfully the Chef cookbook is smart enough to use the anonymous user first, and only use the specified credentials if required.
+# make sure the plugins were installed before creating your first user because the mailer plugin is required
+# before we create any users https://github.com/chef-cookbooks/jenkins/issues/470
 
 automation_user_public_key = OpenSSL::PKey::RSA.new(data_bag_item(node.chef_environment, 'automation_user')['cli_private_key']).public_key
 automation_user_public_key_type = automation_user_public_key.ssh_type
