@@ -1,0 +1,45 @@
+buildscript {
+  repositories {
+    mavenCentral()
+    maven {
+      url 'http://repo.jenkins-ci.org/releases/'
+    }
+  }
+  dependencies {
+    classpath 'org.jenkins-ci.tools:gradle-jpi-plugin:0.18.1'
+  }
+}
+apply plugin: 'java'
+apply plugin: 'org.jenkins-ci.jpi'
+repositories {
+  maven {
+    url 'http://repo.jenkins-ci.org/releases/'
+  }
+}
+
+
+dependencies {
+<% if @plugins.length > 0 %>
+  <% @plugins.each_with_index do |(plugin_name, plugin_data), ndx| %>
+    <% if plugin_data %>
+      jenkinsPlugins([
+        group: '<%= plugin_data.is_a?(::Hash) ? plugin_data.fetch('group','org.jenkins-ci.plugins') : 'org.jenkins-ci.plugins' %>',
+        name: '<%=plugin_name%>',
+        version: '<%=plugin_data.is_a?(::Hash) ? plugin_data.fetch('version','latest.release'): 'latest.release' %>'
+      ])
+    <% end %>
+  <% end %>
+<% end %>
+}
+
+task install(type: Copy){
+  from configurations.runtime
+  include '**/*.hpi'
+  into 'plugins'
+}
+
+task clean_plugins(type: Delete){
+  delete 'plugins'
+}
+
+task update(dependsOn: [clean_plugins, install])

@@ -4,6 +4,25 @@
 include_recipe 'java'
 python_runtime '2'
 include_recipe 'git'
+package 'unzip'
+
+execute 'install_gradle' do
+  command <<-EOH.gsub(/^ {4}/,'')
+    cd /tmp
+    curl -L -Of https://services.gradle.org/distributions/gradle-3.0-bin.zip
+    unzip -oq gradle-3.0-bin.zip -d /opt/
+    ln -s /opt/gradle-3.0 /opt/gradle
+    chmod -R +x /opt/gradle/lib/
+    printf "export GRADLE_HOME=/opt/gradle\nexport PATH=\$PATH:/opt/gradle/bin" > /etc/profile.d/gradle.sh
+
+    . /etc/profile.d/gradle.sh
+    # check installation
+    gradle -v
+  EOH
+  not_if { ::File.exist?("/opt/gradle/bin/gradle")}
+
+end
+
 
 
 ###############################################################################
@@ -51,61 +70,32 @@ end
 ###############################################################################
 # Install Jenkins plugins
 ###############################################################################
+# Before we can do anything on this Jenkins server, we need to make sure it has the proper plugins installed (as some of the following steps will throw exceptions otherwise).
+# When configuring Jenkins for the first time it can be easy to overlook the importance of controlling your plugin versions. Many a Jenkins server has failed spectacularly after an innocent plugin update. Unfortunately Jenkins doesn't make it easy to lock or install old versions of plugins using its API ([`installNecessaryPlugins` doesn't work](http://stackoverflow.com/a/34778163/1157633)).
+# I naively thought about [implementing a package management system for Jenkins plugins](https://groups.google.com/forum/#!topic/jenkinsci-users/hSwFfLeOPZo), however after taking some time to reflect, it became clear that re-inventing the wheel was unnecessary.
+# Jenkins has already solved this problem for [Plugin developers](https://github.com/jenkinsci/gradle-jpi-plugin), and we can just piggy-back on top of what they use.
 
-# delete any pinned plugin files (they should be pinned by the cookbook)
-execute 'delete plugin *.pinned files' do
-  cwd "#{node['jenkins']['master']['home']}/plugins/"
-  command 'rm -rf  *.jpi.pinned'
-  only_if{ ::File.directory?("#{node['jenkins']['master']['home']}/plugins/")}
+template "#{node['jenkins']['master']['home']}/build.gradle" do
+  source 'jenkins_home_build_gradle.erb'
+  variables(:plugins => node['jenkins_wrapper_cookbook']['plugins'].sort.to_h)
+  owner node['jenkins']['master']['user']
+  group node['jenkins']['master']['group']
+  mode '0640'
 end
 
-node['jenkins_wrapper_cookbook']['plugins'].each do |plugin_name, plugin_version|
-  if plugin_version.is_a?(::String)
-    # install the plugin
-    jenkins_plugin plugin_name do
-      action :install
-      version plugin_version
-    end
 
-    # pin the version
-    file "#{node['jenkins']['master']['home']}/plugins/#{plugin_name}.jpi.pinned" do
-      content ''
-      owner node['jenkins']['master']['user']
-      group node['jenkins']['master']['group']
-      mode '0640'
-    end
-  else
-    jenkins_plugin plugin_name
-  end
-end
-
-# we need to ensure that all the new downloaded plugins are registered with jenkins.
-#jenkins_command 'safe-restart'
-
-# update all unpinned plugins
-jenkins_script 'update_all_unpinned_plugins' do
-  command <<-EOH.gsub(/^ {4}/, '')
-    import jenkins.model.Jenkins;
-
-    uc = Jenkins.instance.updateCenter
-    pm = Jenkins.instance.pluginManager
-    pm.doCheckUpdatesServer()
-
-    updated = false
-    pm.plugins.each { plugin ->
-      if (uc.getPlugin(plugin.shortName).version != plugin.version) {
-        update = uc.getPlugin(plugin.shortName).deploy(true)
-        update.get()
-        updated = true
-      }
-    }
-    if (updated) {
-      Jenkins.instance.restart()
-    }
-
+execute 'install_plugins' do
+  command <<-EOH.gsub(/^ {4}/,'')
+  source /etc/profile
+  gradle install && gradle dependencies > 'plugins.lock'
   EOH
+  user node['jenkins']['master']['user']
+  group node['jenkins']['master']['group']
+  cwd node['jenkins']['master']['home']
 end
 
+# we need to ensure that all the newly downloaded plugins are registered
+jenkins_command 'safe-restart'
 
 ###############################################################################
 # Configure Jenkins automation user
@@ -159,40 +149,85 @@ data_bag_item(node.chef_environment, 'credentials').each_pair{|credential_id, cr
 ###############################################################################
 # Create Bootstrap job using script
 ###############################################################################
+# Jenkins automation wouldn't be complete without a way to define and manage Jenkins jobs as code. For that we'll be looking at the
+# [Job DSL Plugin](https://github.com/jenkinsci/job-dsl-plugin). The Job DSL lets you define any Jenkins job in a groovy DSL that's
+# easy to understand and well documented. You should store your DSL job definitions in a git repo so they are version controlled and
+# easy to modify/update. Then all you need is a bootstrap job to pull down your DSL job definition repo and run it on your Jenkins server.
+
 
 jenkins_script 'dsl_bootstrap_job' do
-
   command <<-EOH.gsub(/^ {4}/, '')
-    import jenkins.model.Jenkins;
+    import java.util.Collections
+    import java.util.List
+    import javaposse.jobdsl.plugin.*
+    import jenkins.model.*
+    import hudson.triggers.TimerTrigger
+    import hudson.model.*
     import hudson.model.FreeStyleProject;
+    import hudson.slaves.*
+    import hudson.plugins.git.*
+    import hudson.plugins.git.extensions.GitSCMExtension
+    import hudson.plugins.git.extensions.impl.*;
 
-    if(Jenkins.instance.getJobNames().contains('#{node['jenkins_wrapper_cookbook']['settings']['dsl_job_name']}')){
+    def bootstrap_job_name = '#{node['jenkins_wrapper_cookbook']['settings']['dsl_job_name']}'
+    if(Jenkins.instance.getJobNames().contains(bootstrap_job_name)){
       return
     }
+    def job = new FreeStyleProject(Jenkins.instance, bootstrap_job_name)
+    job.setDescription('Bootstraps the Jenkins server by installing all jobs (using the jobs-dsl plugin)')
 
-    job = Jenkins.instance.createProject(FreeStyleProject, '#{node['jenkins_wrapper_cookbook']['settings']['dsl_job_name']}')
+    //set build trigger cron
+    job.addTrigger(new TimerTrigger("H H * * *"))
+
+
+    //TODO: this should be your Jenkins Job DSL repo (separate from this cookbook book)
+    def projectURL = "https://github.com/AnalogJ/you-dont-know-jenkins.git"
+
+    List<BranchSpec> branchSpec = Collections.singletonList(new BranchSpec("*/master"));
+    List<SubmoduleConfig> submoduleConfig = Collections.<SubmoduleConfig>emptyList();
+
+    // If you're using a private git repo, you'll need to specify a credential id here:
+    def credential_id = '' // maybe 'b2d9219b-30a2-41dd-9da1-79308aba3106'
+
+    List<UserRemoteConfig> userRemoteConfig = Collections.singletonList(new UserRemoteConfig(projectURL, '', '', credential_id))
+    List<GitSCMExtension> gitScmExt = new ArrayList<GitSCMExtension>();
+    gitScmExt.add(new RelativeTargetDirectory('script'))
+    def scm = new GitSCM(userRemoteConfig, branchSpec, false, submoduleConfig, null, null, gitScmExt)
+    job.setScm(scm)
 
     builder = new javaposse.jobdsl.plugin.ExecuteDslScripts(
       new javaposse.jobdsl.plugin.ExecuteDslScripts.ScriptLocation(
           'false',
-          'samples.groovy',
-          null),
+          "script/simple/tutorial_dsl.groovy",
+          null
+      ),
       false,
       javaposse.jobdsl.plugin.RemovedJobAction.DELETE,
       javaposse.jobdsl.plugin.RemovedViewAction.DELETE,
-      javaposse.jobdsl.plugin.LookupStrategy.JENKINS_ROOT
+      javaposse.jobdsl.plugin.LookupStrategy.JENKINS_ROOT,
+      ''
     )
     job.buildersList.add(builder)
-
     job.save()
+
+    Jenkins.instance.restart()
   EOH
+  notifies :execute, 'jenkins_command[run_job_dsl]'
+end
+
+# execute the job using the cli
+jenkins_command 'run_job_dsl' do
+  command "build '#{node['jenkins_wrapper_cookbook']['settings']['dsl_job_name']}'"
+  action :nothing
 end
 
 ###############################################################################
 # Configure Jenkins Installation
 ###############################################################################
+# Configuring Jenkins requires a thorough look at the [Jenkins](http://javadoc.jenkins-ci.org/jenkins/model/Jenkins.html) [documentation](http://javadoc.jenkins-ci.org/hudson/model/Hudson.html)
+# Any setting you can change via the web UI can be set via Jenkins groovy code.
 
-jenkins_script 'jenkins_configure' do
+    jenkins_script 'jenkins_configure' do
   command <<-EOH.gsub(/^ {4}/, '')
     import jenkins.model.Jenkins;
     import jenkins.model.*;
@@ -212,17 +247,31 @@ jenkins_script 'jenkins_configure' do
     sshd.setPort(#{node['jenkins_wrapper_cookbook']['settings']['sshd_port']})
     sshd.save()
 
+    def mailer = instance.getDescriptor("hudson.tasks.Mailer")
+    mailer.setReplyToAddress("#{node['jenkins_wrapper_cookbook']['settings']['system_email_address']}")
+    mailer.setSmtpHost("localhost")
+    mailer.setDefaultSuffix("@example.com")
+    mailer.setUseSsl(false)
+    mailer.setSmtpPort("25")
+    mailer.setCharset("UTF-8")
+    instance.save()
+
+    def gitscm = instance.getDescriptor('hudson.plugins.git.GitSCM')
+    gitscm.setGlobalConfigName('jenkins-build')
+    gitscm.setGlobalConfigEmail('#{node['jenkins_wrapper_cookbook']['settings']['system_email_address']}')
+    instance.save()
+
   EOH
 end
-
-###############################################################################
-# Enable Jenkins Authentication
-###############################################################################
-
-# example LDAP security realm: https://issues.jenkins-ci.org/browse/JENKINS-29733
-# The automation user you're using (node['jenkins_wrapper_cookbook']['automation_username']) must be a real user
-# https://github.com/chef-cookbooks/jenkins/blob/master/README.md#authentication
-
+#
+# ###############################################################################
+# # Enable Jenkins Authentication
+# ###############################################################################
+#
+# # example LDAP security realm: https://issues.jenkins-ci.org/browse/JENKINS-29733
+# # The automation user you're using (node['jenkins_wrapper_cookbook']['automation_username']) must be a real user
+# # https://github.com/chef-cookbooks/jenkins/blob/master/README.md#authentication
+#
 # jenkins_script 'enable_active_directory_authentication' do
 #   command <<-EOH.gsub(/^ {4}/, '')
 #     import jenkins.model.*
@@ -235,6 +284,7 @@ end
 #     String domain = 'my.domain.example.com'
 #     String site = 'site'
 #     String server = '192.168.1.1:3268'
+#     //leave bindName and bindPassword blank if unnecessary.
 #     String bindName = 'account@my.domain.com'
 #     String bindPassword = 'password'
 #     ad_realm = new ActiveDirectorySecurityRealm(domain, site, bindName, bindPassword, server)

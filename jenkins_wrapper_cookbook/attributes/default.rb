@@ -13,7 +13,12 @@ default['jenkins_wrapper_cookbook'].tap do |jenkins_wrapper|
       'git' => true,
       'git-client' => true,
       'matrix-auth' => true,
-      'job-dsl' => '1.48'
+      'job-dsl' => {
+          'version' => '1.48'
+      },
+      'checkstyle' => {
+          'group' => 'org.jvnet.hudson.plugins'
+      }
   }
   jenkins_wrapper['settings'] = {
       'dsl_job_name' => 'dsl-bootstrap-job',
