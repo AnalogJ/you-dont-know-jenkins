@@ -1,5 +1,5 @@
 ###############################################################################
-# Install system dependencies
+# Install server dependencies
 ###############################################################################
 include_recipe 'java'
 python_runtime '2'
@@ -113,8 +113,9 @@ end
 # Configure Jenkins automation user
 ###############################################################################
 # TODO: this should be from an encrypted databag
-# make sure the plugins were installed before creating your first user because the mailer plugin is required
-# before we create any users https://github.com/chef-cookbooks/jenkins/issues/470
+# The first thing we need to do is specify our automation user credentials for the Jenkins server.
+# This is a bit counter intuitive, as this is the first run and we haven't created our automation user or turned on Authentication yet, but on subsequent Chef run this cookbook will fail if the automation user API credentials are not configured.
+# Thankfully the Chef cookbook is smart enough to use the anonymous user first, and only use the specified credentials if required.
 
 automation_user_public_key = OpenSSL::PKey::RSA.new(data_bag_item(node.chef_environment, 'automation_user')['cli_private_key']).public_key
 automation_user_public_key_type = automation_user_public_key.ssh_type
