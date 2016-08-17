@@ -32,14 +32,15 @@ dependencies {
 <% end %>
 }
 
-task install(type: Copy){
+task clean(type: Delete){
+  delete 'plugins'
+}
+  
+task install(type: Copy, dependsOn: [clean]){
   from configurations.runtime
   include '**/*.hpi'
   into 'plugins'
 }
 
-task clean_plugins(type: Delete){
-  delete 'plugins'
-}
-
-task update(dependsOn: [clean_plugins, install])
+// should be run with `gradle update --refresh-dependencies`
+task update(dependsOn: [clean, install])
