@@ -9,6 +9,7 @@ default['jenkins_wrapper_cookbook']['automation_username'] = 'jenkins_automation
 default['jenkins_wrapper_cookbook'].tap do |jenkins_wrapper|
   jenkins_wrapper['plugins'] = {
       'active-directory' => true,
+      'ant' => true,
       'credentials' => true,
       'git' => true,
       'git-client' => true,

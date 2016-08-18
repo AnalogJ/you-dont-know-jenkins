@@ -181,7 +181,7 @@ jenkins_script 'dsl_bootstrap_job' do
 
 
     //TODO: this should be your Jenkins Job DSL repo (separate from this cookbook book)
-    def projectURL = "https://github.com/AnalogJ/you-dont-know-jenkins.git"
+    def projectURL = "https://github.com/AnalogJ/you-dont-know-jenkins-job-dsl.git"
 
     List<BranchSpec> branchSpec = Collections.singletonList(new BranchSpec("*/master"));
     List<SubmoduleConfig> submoduleConfig = Collections.<SubmoduleConfig>emptyList();
@@ -198,14 +198,14 @@ jenkins_script 'dsl_bootstrap_job' do
     builder = new javaposse.jobdsl.plugin.ExecuteDslScripts(
       new javaposse.jobdsl.plugin.ExecuteDslScripts.ScriptLocation(
           'false',
-          "script/jenkins_job_dsl/simple/tutorial_dsl.groovy",
+          "script/factory_pattern_example_dsl.groovy",
           null
       ),
       false,
       javaposse.jobdsl.plugin.RemovedJobAction.DELETE,
       javaposse.jobdsl.plugin.RemovedViewAction.DELETE,
       javaposse.jobdsl.plugin.LookupStrategy.JENKINS_ROOT,
-      ''
+      'script/lib/'
     )
     job.buildersList.add(builder)
     job.save()
