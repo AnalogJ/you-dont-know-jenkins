@@ -198,7 +198,7 @@ jenkins_script 'dsl_bootstrap_job' do
     builder = new javaposse.jobdsl.plugin.ExecuteDslScripts(
       new javaposse.jobdsl.plugin.ExecuteDslScripts.ScriptLocation(
           'false',
-          "script/factory_pattern_example_dsl.groovy",
+          "script/factory_pattern_common_dsl.groovy",
           null
       ),
       false,
