@@ -67,6 +67,16 @@ directory "#{node['jenkins']['master']['home']}/init.groovy.d/" do
   recursive true
 end
 
+file "#{node['jenkins']['master']['home']}/chef_environment_data.json" do
+  content lazy {
+    JSON.pretty_generate(
+        :chef_environment_name => node.chef_environment
+    )
+  }
+  owner node['jenkins']['master']['user']
+  group node['jenkins']['master']['group']
+end
+
 ###############################################################################
 # Install Jenkins plugins
 ###############################################################################
@@ -176,6 +186,9 @@ jenkins_script 'dsl_bootstrap_job' do
     def job = new FreeStyleProject(Jenkins.instance, bootstrap_job_name)
     job.setDescription('Bootstraps the Jenkins server by installing all jobs (using the jobs-dsl plugin)')
 
+    def shellStep = new hudson.tasks.Shell('cp -f $HUDSON_HOME/chef_environment_data.json $WORKSPACE/chef_environment_data.json')
+	  job.buildersList.add(shellStep)
+
     //set build trigger cron
     job.addTrigger(new TimerTrigger("H H * * *"))
 
@@ -198,7 +211,7 @@ jenkins_script 'dsl_bootstrap_job' do
     builder = new javaposse.jobdsl.plugin.ExecuteDslScripts(
       new javaposse.jobdsl.plugin.ExecuteDslScripts.ScriptLocation(
           'false',
-          "script/factory_pattern_common_dsl.groovy\nscript/#{node.chef_environment}/*.groovy",
+          "script/factory_pattern_common_dsl.groovy\\nscript/#{node.chef_environment}/*.groovy",
           null
       ),
       false,
