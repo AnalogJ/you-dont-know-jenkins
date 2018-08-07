@@ -1,10 +1,21 @@
 ###############################################################################
 # Install server dependencies
 ###############################################################################
+# This ensures stale apt indexes don't fail package installations
+apt_update 'run update' do
+  action :nothing
+end.run_action(:update)
+
 include_recipe 'java'
 python_runtime '2'
 include_recipe 'git'
 package 'unzip'
+
+## Using the package is tricky as some distributions have old versions you need
+## a PPA or EPEL repo to do it "safely"
+# package 'gradle'
+## There IS a Gradle cookbook, but the published one is ancient, and the updated
+## one isn't published
 
 execute 'install_gradle' do
   command <<-EOH.gsub(/^ {4}/,'')
@@ -86,7 +97,7 @@ end
 
 execute 'install_plugins' do
   command <<-EOH.gsub(/^ {4}/,'')
-  source /etc/profile
+  . /etc/profile
   gradle install && gradle dependencies > 'plugins.lock'
   EOH
   user node['jenkins']['master']['user']

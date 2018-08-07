@@ -1,0 +1,33 @@
+---
+driver:
+  name: dokken
+  chef_version: latest
+  privileged: true
+
+provisioner:
+  name: dokken
+  data_bags_path: "data_bags"
+  environments_path: "environments"
+  client_rb:
+    environment: 'dev'
+
+transport:
+  name: dokken
+
+platforms:
+  - name: ubuntu-14.04
+    driver:
+      image: dokken/ubuntu-14.04
+      pid_one_command: /sbin/init
+  - name: ubuntu-18.04
+    driver:
+      image: dokken/ubuntu-18.04
+      pid_one_command: /sbin/init
+      volumes:
+        - /sys/fs/cgroup:/sys/fs/cgroup:ro
+
+suites:
+  - name: default
+    run_list:
+      - recipe[jenkins_wrapper_cookbook::default]
+    attributes:
