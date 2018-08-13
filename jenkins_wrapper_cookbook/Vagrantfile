@@ -47,6 +47,18 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     chef.data_bags_path = 'data_bags'
     chef.environments_path = 'environments'
     chef.nodes_path = 'nodes'
+    # Need to clean 'nodes' before each provision otherwise it uses existing data
+    if File.exist?(chef.nodes_path)
+      if File.directory?(chef.nodes_path)
+          Dir.foreach(chef.nodes_path) do |file|
+            if ((file.to_s != ".")\
+              and (file.to_s != "..")\
+              and (file.to_s != ".gitignore"))
+                File.delete("#{chef.nodes_path}/#{file}")
+            end
+          end
+      end
+    end
 
     chef.environment = 'dev'
     chef.add_recipe('jenkins_wrapper_cookbook')
