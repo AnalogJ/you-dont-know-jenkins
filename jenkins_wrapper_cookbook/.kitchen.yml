@@ -2,7 +2,6 @@
 driver:
   name: dokken
   chef_version: latest
-  privileged: true
 
 provisioner:
   name: dokken
@@ -25,6 +24,12 @@ platforms:
       pid_one_command: /sbin/init
       volumes:
         - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      seccomp: unconfined
+      tmpfs:
+         - "/run"
+         - "/run/lock"
+      cap_add:
+         - SYS_ADMIN
 
 suites:
   - name: default
