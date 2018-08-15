@@ -4,6 +4,7 @@
 # This ensures stale apt indexes don't fail package installations
 apt_update 'run update' do
   action :nothing
+  only_if { platform_family?('debian') }
 end.run_action(:update)
 
 include_recipe 'java'
