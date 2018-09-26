@@ -1,5 +1,5 @@
 default['java']['install_flavor'] = 'oracle'
-default['java']['jdk_version'] = '7'
+default['java']['jdk_version'] = '8'
 default['java']['oracle']['accept_oracle_download_terms'] = true
 
 default['jenkins']['master']['install_method'] = 'war'
@@ -10,7 +10,9 @@ default['jenkins_wrapper_cookbook'].tap do |jenkins_wrapper|
   jenkins_wrapper['plugins'] = {
       'active-directory' => true,
       'credentials' => true,
-      'git' => true,
+      'git' => {
+          'version' => '3.9.1'
+      },
       'git-client' => true,
       'matrix-auth' => true,
       'job-dsl' => {
